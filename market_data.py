@@ -1,4 +1,4 @@
-""" Market data layer — talks to MEXC's public REST API (no API key needed for market data). Handles symbol discovery (the "whole market" scan) and OHLCV retrieval per timeframe. NOTE: Switched from Binance to MEXC because Binance blocks requests coming from US-based server IPs (HTTP 451). MEXC's spot REST API mirrors Binance's format very closely, so almost nothing else in the bot needs to change. """
+""" Market data layer — talks to MEXC's public REST API (no API key needed for market data). Handles symbol discovery (the "whole market" scan) and OHLCV retrieval per timeframe. NOTE: Switched from Binance to MEXC because Binance blocks requests coming from US-based server IPs (HTTP 451). MEXC's spot REST API mirrors Binance's format closely, but NOT identically — two differences we've had to patch: 1) klines response has 8 columns instead of Binance's 12 (handled below by building the DataFrame dynamically from however many columns come back). 2) klines interval names differ for some timeframes (e.g. Binance "1h" is MEXC "60m"). Handled below via INTERVAL_MAP. """
 from __future__ import annotations
 import logging
 import time
@@ -13,6 +13,26 @@ import config
 log = logging.getLogger("market_data")
 
 _session = requests.Session()
+
+# Maps our internal/Binance-style interval strings to MEXC's own interval
+# strings. Any interval not listed here is assumed to already match MEXC's
+# format (e.g. "1m", "5m", "15m", "30m", "1d" are the same on both).
+INTERVAL_MAP = {
+    "1h": "60m",
+    "2h": "120m",
+    "4h": "4h",
+    "6h": "8h",   # MEXC has no native 6h bucket; nearest is 8h — adjust in
+                  # config.TIMEFRAMES if you need something closer to 6h.
+    "8h": "8h",
+    "12h": "12h",
+    "1d": "1d",
+    "1w": "1W",
+    "1M": "1M",
+}
+
+
+def _mexc_interval(interval: str) -> str:
+    return INTERVAL_MAP.get(interval, interval)
 
 
 def _get(path: str, params: dict | None = None) -> dict:
@@ -48,8 +68,9 @@ def get_liquid_usdt_symbols() -> List[str]:
 
 
 def get_klines(symbol: str, interval: str, limit: int = 250) -> pd.DataFrame:
+    mexc_interval = _mexc_interval(interval)
     raw = _get("/api/v3/klines", {
-        "symbol": symbol, "interval": interval, "limit": limit,
+        "symbol": symbol, "interval": mexc_interval, "limit": limit,
     })
     # MEXC's klines response has fewer columns than Binance's (8 vs 12):
     # [open_time, open, high, low, close, volume, close_time, quote_volume]
@@ -95,6 +116,5 @@ def fetch_all_symbols_data(symbols: List[str]) -> Dict[str, Dict[str, pd.DataFra
                     results[sym] = data
             except Exception as exc:  # noqa: BLE001
                 log.warning("Error fetching %s: %s", sym, exc)
-            # small pacing delay to be a good API citizen
             time.sleep(0.05)
     return results
