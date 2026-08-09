@@ -1,13 +1,4 @@
-"""
-Signal Engine — combines multi-timeframe trend, momentum, volatility,
-volume and market-structure factors into a single weighted confidence
-score, then (if strong enough) builds a full trade plan: entry, stop
-loss, and three take-profit targets expressed in risk multiples (R).
-
-This is a transparent, rule-based "confluence" engine. It does not predict
-the future — it quantifies how many independent, well-established
-technical signals currently agree with each other.
-"""
+""" Signal Engine — combines multi-timeframe trend, momentum, volatility, volume and market-structure factors into a single weighted confidence score, then (if strong enough) builds a full trade plan: entry, stop loss, and three take-profit targets expressed in risk multiples (R). This is a transparent, rule-based "confluence" engine. It does not predict the future — it quantifies how many independent, well-established technical signals currently agree with each other. """
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
@@ -113,7 +104,12 @@ def _score_structure(mtf: Dict[str, pd.DataFrame]) -> float:
 
 
 def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Signal]:
-    if not mtf_raw or any(df.empty or len(df) < 210 for df in mtf_raw.values()):
+    if not mtf_raw:
+        log.info("%-12s SKIP no data returned", symbol)
+        return None
+    short = {k: len(df) for k, df in mtf_raw.items() if df.empty or len(df) < 210}
+    if short:
+        log.info("%-12s SKIP not enough candles: %s", symbol, short)
         return None
 
     mtf = {k: add_core_indicators(v) for k, v in mtf_raw.items()}
@@ -130,6 +126,16 @@ def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Si
     # weighted is in [-1, 1] -> map to a 0-100 confidence score, direction from sign
     direction = "LONG" if weighted >= 0 else "SHORT"
     score = round(abs(weighted) * 100, 1)
+
+    # ALWAYS log the computed score, even below threshold — this is the
+    # single most useful line for figuring out whether the engine is
+    # actually close to firing or nowhere near it.
+    log.info(
+        "%-12s %-5s score=%5.1f (need %.0f) | trend=%+.2f mom=%+.2f volat=%+.2f vol=%+.2f struct=%+.2f",
+        symbol, direction, score, config.MIN_SIGNAL_SCORE,
+        factors["trend_alignment"], factors["momentum"],
+        factors["volatility_position"], factors["volume"], factors["structure"],
+    )
 
     if score < config.MIN_SIGNAL_SCORE:
         return None
