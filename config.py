@@ -30,7 +30,7 @@ EXCHANGE_BASE_URL = "https://api.mexc.com"
 QUOTE_ASSET = "USDT"                 # scan every <coin>/USDT pair
 MIN_24H_QUOTE_VOLUME_USDT = 5_000_000  # skip illiquid / low-volume coins
 MAX_SYMBOLS_PER_CYCLE = 80           # respects exchange rate limits per scan
-SCAN_INTERVAL_SECONDS = 15 * 60      # how often the whole market is rescanned
+SCAN_INTERVAL_SECONDS = 3 * 60       # how often the whole market is rescanned (every 3 minutes)
 REQUEST_TIMEOUT = 10
 MAX_CONCURRENT_REQUESTS = 8          # thread pool size for klines fetching
 
