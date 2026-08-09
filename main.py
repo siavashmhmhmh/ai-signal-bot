@@ -1,0 +1,88 @@
+"""
+Entry point.
+
+Run with:  python main.py
+
+Required env vars:
+  TELEGRAM_BOT_TOKEN   - from @BotFather
+  TELEGRAM_CHAT_ID     - chat/channel to post signals into
+Optional:
+  ANTHROPIC_API_KEY    - enables AI-written rationale per signal
+"""
+from __future__ import annotations
+import logging
+
+from telegram import Update
+from telegram.ext import ContextTypes
+
+import config
+import market_data
+import state
+import telegram_bot
+from ai_analysis import generate_commentary
+from signal_engine import analyze_symbol
+
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+)
+log = logging.getLogger("main")
+
+
+async def run_market_scan(app) -> int:
+    """One full scan cycle across the whole liquid USDT market. Returns the
+    number of signals sent."""
+    log.info("Starting market scan...")
+    symbols = market_data.get_liquid_usdt_symbols()
+    all_data = market_data.fetch_all_symbols_data(symbols)
+    log.info("Fetched data for %d/%d symbols.", len(all_data), len(symbols))
+
+    sent = 0
+    for symbol, mtf_raw in all_data.items():
+        try:
+            signal = analyze_symbol(symbol, mtf_raw)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Analysis failed for %s: %s", symbol, exc)
+            continue
+
+        if signal is None:
+            continue
+
+        if not state.should_send(signal.symbol, signal.direction):
+            log.info("Skipping %s %s — still in cooldown.", signal.symbol, signal.direction)
+            continue
+
+        log.info("Signal found: %s %s score=%.1f", signal.symbol, signal.direction, signal.score)
+        commentary = generate_commentary(signal)
+        await telegram_bot.send_signal(app, signal, commentary)
+        state.mark_sent(signal.symbol, signal.direction)
+        sent += 1
+
+    log.info("Scan complete. %d signal(s) sent.", sent)
+    return sent
+
+
+async def job_scan_callback(context: ContextTypes.DEFAULT_TYPE) -> None:
+    await run_market_scan(context.application)
+
+
+async def command_scan_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("🔎 در حال اسکن کل بازار... ممکن است چند دقیقه طول بکشد.")
+    sent = await run_market_scan(context.application)
+    await update.message.reply_text(f"✅ اسکن تمام شد. {sent} سیگنال جدید ارسال شد.")
+
+
+def main() -> None:
+    if not config.TELEGRAM_BOT_TOKEN:
+        raise SystemExit("TELEGRAM_BOT_TOKEN تنظیم نشده است. متغیر محیطی را ست کنید.")
+    if not config.TELEGRAM_CHAT_ID:
+        log.warning("TELEGRAM_CHAT_ID تنظیم نشده — سیگنال‌ها ارسال نخواهند شد تا وقتی تنظیم شود.")
+
+    app = telegram_bot.build_application(job_scan_callback, command_scan_callback)
+    log.info("Bot starting... scan interval = %ss, min score = %s",
+              config.SCAN_INTERVAL_SECONDS, config.MIN_SIGNAL_SCORE)
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
