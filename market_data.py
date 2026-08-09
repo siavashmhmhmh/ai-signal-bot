@@ -1,8 +1,4 @@
-"""
-Market data layer — talks to Binance's public REST API (no API key needed
-for market data). Handles symbol discovery (the "whole market" scan) and
-OHLCV retrieval per timeframe.
-"""
+""" Market data layer — talks to MEXC's public REST API (no API key needed for market data). Handles symbol discovery (the "whole market" scan) and OHLCV retrieval per timeframe. NOTE: Switched from Binance to MEXC because Binance blocks requests coming from US-based server IPs (HTTP 451). MEXC's spot REST API mirrors Binance's format very closely, so almost nothing else in the bot needs to change. """
 from __future__ import annotations
 import logging
 import time
@@ -27,28 +23,23 @@ def _get(path: str, params: dict | None = None) -> dict:
 
 
 def get_liquid_usdt_symbols() -> List[str]:
-    """
-    Returns every actively-traded <COIN>USDT spot symbol on Binance,
-    filtered by minimum 24h quote volume so the bot doesn't waste calls
-    (or issue signals) on dead/illiquid markets. This is effectively
-    "the whole market" in liquidity terms.
-    """
+    """ Returns every actively-traded <COIN>USDT spot symbol on MEXC, filtered by minimum 24h quote volume so the bot doesn't waste calls (or issue signals) on dead/illiquid markets. This is effectively "the whole market" in liquidity terms. """
     exchange_info = _get("/api/v3/exchangeInfo")
     tradable = {
         s["symbol"]
         for s in exchange_info["symbols"]
-        if s["status"] == "TRADING"
+        if s.get("status") in ("TRADING", "ENABLED", "1")
         and s["quoteAsset"] == config.QUOTE_ASSET
-        and s["isSpotTradingAllowed"]
+        and s.get("isSpotTradingAllowed", True)
     }
 
     tickers = _get("/api/v3/ticker/24hr")
     liquid = [
         t for t in tickers
         if t["symbol"] in tradable
-        and float(t["quoteVolume"]) >= config.MIN_24H_QUOTE_VOLUME_USDT
+        and float(t.get("quoteVolume", 0) or 0) >= config.MIN_24H_QUOTE_VOLUME_USDT
     ]
-    liquid.sort(key=lambda t: float(t["quoteVolume"]), reverse=True)
+    liquid.sort(key=lambda t: float(t.get("quoteVolume", 0) or 0), reverse=True)
 
     symbols = [t["symbol"] for t in liquid][: config.MAX_SYMBOLS_PER_CYCLE]
     log.info("Market scan: %d liquid USDT symbols selected (of %d tradable).",
@@ -83,10 +74,7 @@ def get_multi_timeframe_data(symbol: str) -> Dict[str, pd.DataFrame]:
 
 
 def fetch_all_symbols_data(symbols: List[str]) -> Dict[str, Dict[str, pd.DataFrame]]:
-    """
-    Concurrently fetches multi-timeframe data for every symbol, respecting
-    a bounded thread pool so we stay well under Binance's rate limits.
-    """
+    """ Concurrently fetches multi-timeframe data for every symbol, respecting a bounded thread pool so we stay well under the exchange's rate limits. """
     results: Dict[str, Dict[str, pd.DataFrame]] = {}
     with ThreadPoolExecutor(max_workers=config.MAX_CONCURRENT_REQUESTS) as pool:
         future_to_symbol = {
