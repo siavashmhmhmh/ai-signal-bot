@@ -1,8 +1,4 @@
-"""
-Central configuration for the AI Crypto Signal Bot.
-Everything sensitive (tokens, keys) is read from environment variables —
-never hard-code secrets in this file.
-"""
+""" Central configuration for the AI Crypto Signal Bot. Everything sensitive (tokens, keys) is read from environment variables — never hard-code secrets in this file. """
 import os
 
 # ---------------------------------------------------------------------------
@@ -27,10 +23,13 @@ ENABLE_AI_COMMENTARY = bool(ANTHROPIC_API_KEY)
 # ---------------------------------------------------------------------------
 # MARKET SCAN
 # ---------------------------------------------------------------------------
-EXCHANGE_BASE_URL = "https://api.binance.com"
+# NOTE: Switched from Binance to MEXC because Binance returns HTTP 451 and
+# blocks requests coming from US-based server IPs (like Railway's default
+# region). MEXC's public REST API mirrors Binance's format closely.
+EXCHANGE_BASE_URL = "https://api.mexc.com"
 QUOTE_ASSET = "USDT"                 # scan every <coin>/USDT pair
 MIN_24H_QUOTE_VOLUME_USDT = 5_000_000  # skip illiquid / low-volume coins
-MAX_SYMBOLS_PER_CYCLE = 80           # respects Binance rate limits per scan
+MAX_SYMBOLS_PER_CYCLE = 80           # respects exchange rate limits per scan
 SCAN_INTERVAL_SECONDS = 15 * 60      # how often the whole market is rescanned
 REQUEST_TIMEOUT = 10
 MAX_CONCURRENT_REQUESTS = 8          # thread pool size for klines fetching
