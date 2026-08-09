@@ -51,9 +51,16 @@ def get_klines(symbol: str, interval: str, limit: int = 250) -> pd.DataFrame:
     raw = _get("/api/v3/klines", {
         "symbol": symbol, "interval": interval, "limit": limit,
     })
-    cols = ["open_time", "open", "high", "low", "close", "volume",
-            "close_time", "quote_volume", "trades",
-            "taker_buy_base", "taker_buy_quote", "ignore"]
+    # MEXC's klines response has fewer columns than Binance's (8 vs 12):
+    # [open_time, open, high, low, close, volume, close_time, quote_volume]
+    # We build the DataFrame dynamically from however many columns actually
+    # come back, so this keeps working even if the exchange adds/drops a
+    # trailing field.
+    base_cols = ["open_time", "open", "high", "low", "close", "volume",
+                 "close_time", "quote_volume", "trades",
+                 "taker_buy_base", "taker_buy_quote", "ignore"]
+    n = len(raw[0]) if raw else len(base_cols)
+    cols = base_cols[:n]
     df = pd.DataFrame(raw, columns=cols)
     for c in ["open", "high", "low", "close", "volume"]:
         df[c] = df[c].astype(float)
