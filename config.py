@@ -48,7 +48,7 @@ KLINES_LIMIT = 250  # candles fetched per timeframe (enough for EMA200)
 # ---------------------------------------------------------------------------
 # Each factor contributes a weighted score in [-1, +1]. Total is normalized
 # to 0-100. A signal only fires above MIN_SIGNAL_SCORE.
-MIN_SIGNAL_SCORE = 68
+MIN_SIGNAL_SCORE = 30  # TEMPORARY: lowered for testing, raise back to 68 later
 FACTOR_WEIGHTS = {
     "trend_alignment": 0.25,   # EMA20/50/200 stacking across timeframes
     "momentum": 0.20,          # RSI + MACD
