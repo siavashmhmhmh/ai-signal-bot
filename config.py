@@ -23,14 +23,16 @@ ENABLE_AI_COMMENTARY = bool(ANTHROPIC_API_KEY)
 # ---------------------------------------------------------------------------
 # MARKET SCAN
 # ---------------------------------------------------------------------------
-# NOTE: Switched from Binance to MEXC because Binance returns HTTP 451 and
-# blocks requests coming from US-based server IPs (like Railway's default
-# region). MEXC's public REST API mirrors Binance's format closely.
 EXCHANGE_BASE_URL = "https://api.mexc.com"
+# NOTE: was api.binance.com — Binance returns HTTP 451 (geo-block) from
+# Railway's US-based IPs, which silently kills every symbol fetch every
+# single cycle. MEXC's public REST API is used instead (see market_data.py
+# for the small format differences this required: column count + interval
+# names).
 QUOTE_ASSET = "USDT"                 # scan every <coin>/USDT pair
 MIN_24H_QUOTE_VOLUME_USDT = 5_000_000  # skip illiquid / low-volume coins
 MAX_SYMBOLS_PER_CYCLE = 80           # respects exchange rate limits per scan
-SCAN_INTERVAL_SECONDS = 3 * 60       # how often the whole market is rescanned (every 3 minutes)
+SCAN_INTERVAL_SECONDS = 15 * 60      # how often the whole market is rescanned
 REQUEST_TIMEOUT = 10
 MAX_CONCURRENT_REQUESTS = 8          # thread pool size for klines fetching
 
@@ -48,7 +50,14 @@ KLINES_LIMIT = 250  # candles fetched per timeframe (enough for EMA200)
 # ---------------------------------------------------------------------------
 # Each factor contributes a weighted score in [-1, +1]. Total is normalized
 # to 0-100. A signal only fires above MIN_SIGNAL_SCORE.
-MIN_SIGNAL_SCORE = 30  # TEMPORARY: lowered for testing, raise back to 68 later
+MIN_SIGNAL_SCORE = 30
+# NOTE: lowered from 68. With 5 weighted factors in [-1,1] summing to a
+# max magnitude of 1.0, a score of 68+ requires almost every factor to
+# align strongly and simultaneously — this rarely happens in real market
+# data, which is why zero signals were firing even once data was flowing.
+# Start around 30, watch the per-symbol score logs (signal_engine.py now
+# logs every symbol's score each cycle), and raise this once you've seen
+# what realistic scores look like for your actual factor weights.
 FACTOR_WEIGHTS = {
     "trend_alignment": 0.25,   # EMA20/50/200 stacking across timeframes
     "momentum": 0.20,          # RSI + MACD
