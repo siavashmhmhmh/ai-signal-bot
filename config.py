@@ -73,7 +73,14 @@ TP_R_MULTIPLES = [1.0, 2.0, 3.5]  # TP1 / TP2 / TP3 expressed in "R" (risk units
 
 # Avoid spamming: don't resend the same symbol/direction within this window
 # unless the setup meaningfully changes.
-SIGNAL_COOLDOWN_HOURS = 6
+SIGNAL_COOLDOWN_HOURS = 0
+# NOTE: temporarily 0 (was 6) — the logs showed XRPUSDT SHORT (score 37.7)
+# and TUTUSDT LONG (score 53.3) both cleared MIN_SIGNAL_SCORE but got
+# skipped as "still in cooldown," meaning bot_state.json already had
+# recent entries for them. Setting this to 0 forces the next /scan to
+# ignore cooldown and actually send, so we can confirm delivery works
+# end-to-end. Once you've seen a real signal land in Telegram, put this
+# back to something sensible like 4-6 so it doesn't spam you.
 
 # ---------------------------------------------------------------------------
 # MISC
