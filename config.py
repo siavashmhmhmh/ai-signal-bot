@@ -30,7 +30,12 @@ EXCHANGE_BASE_URL = "https://api.mexc.com"
 # for the small format differences this required: column count + interval
 # names).
 QUOTE_ASSET = "USDT"                 # scan every <coin>/USDT pair
-MIN_24H_QUOTE_VOLUME_USDT = 5_000_000  # skip illiquid / low-volume coins
+MIN_24H_QUOTE_VOLUME_USDT = 1_000_000  # skip illiquid / low-volume coins
+# NOTE: lowered from 5,000,000 — on MEXC that bar left only ~8 of 1630
+# tradable USDT pairs in the scan. 1,000,000 gives much wider coverage.
+# Going much lower than this starts pulling in thin/illiquid coins where
+# spread and slippage make the signals unreliable in practice — raise it
+# back up if you start seeing junky low-cap symbols in your signals.
 MAX_SYMBOLS_PER_CYCLE = 80           # respects exchange rate limits per scan
 SCAN_INTERVAL_SECONDS = 15 * 60      # how often the whole market is rescanned
 REQUEST_TIMEOUT = 10
@@ -71,16 +76,25 @@ ATR_LENGTH = 14
 ATR_STOP_MULTIPLIER = 1.5       # stop distance = ATR * multiplier (beyond structure)
 TP_R_MULTIPLES = [1.0, 2.0, 3.5]  # TP1 / TP2 / TP3 expressed in "R" (risk units)
 
+# ---------------------------------------------------------------------------
+# SIGNAL QUALITY FILTERS (reduce false signals / bad risk setups)
+# ---------------------------------------------------------------------------
+# ADX measures trend STRENGTH (not direction). Below this, the market is
+# choppy/ranging and directional signals are much less reliable — reject
+# them even if the weighted score cleared MIN_SIGNAL_SCORE.
+MIN_ADX = 20
+
+# Sanity bounds on stop distance as a % of entry price. Too tight (near
+# MIN) gets stopped out by normal noise; too wide (near MAX) means bad
+# risk/reward even before it fires.
+MIN_RISK_PCT = 0.003   # 0.3%
+MAX_RISK_PCT = 0.08    # 8%
+
 # Avoid spamming: don't resend the same symbol/direction within this window
 # unless the setup meaningfully changes.
 SIGNAL_COOLDOWN_HOURS = 0
-# NOTE: temporarily 0 (was 6) — the logs showed XRPUSDT SHORT (score 37.7)
-# and TUTUSDT LONG (score 53.3) both cleared MIN_SIGNAL_SCORE but got
-# skipped as "still in cooldown," meaning bot_state.json already had
-# recent entries for them. Setting this to 0 forces the next /scan to
-# ignore cooldown and actually send, so we can confirm delivery works
-# end-to-end. Once you've seen a real signal land in Telegram, put this
-# back to something sensible like 4-6 so it doesn't spam you.
+# NOTE: temporarily 0 for testing delivery end-to-end. Once you've confirmed
+# real signals are landing in your chat/channel, set this back to 4-6.
 
 # ---------------------------------------------------------------------------
 # MISC
