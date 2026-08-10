@@ -1,7 +1,4 @@
-"""
-Telegram integration — formats and sends signal messages, plus a couple of
-handy commands (/start, /status, /scan) for manual control.
-"""
+""" Telegram integration — formats and sends signal messages, plus a couple of handy commands (/start, /status, /scan) for manual control. """
 from __future__ import annotations
 import logging
 
@@ -18,7 +15,7 @@ log = logging.getLogger("telegram_bot")
 def format_signal_message(signal: Signal, ai_commentary: str | None) -> str:
     arrow = "🟢⬆️" if signal.direction == "LONG" else "🔴⬇️"
     targets_lines = "\n".join(
-        f"   🎯 TP{i+1}: <code>{t}</code>  (R:R {rr}:1)"
+        f" 🎯 TP{i+1}: <code>{t}</code> (R:R {rr}:1)"
         for i, (t, rr) in enumerate(zip(signal.targets, signal.risk_reward))
     )
 
@@ -43,16 +40,26 @@ def format_signal_message(signal: Signal, ai_commentary: str | None) -> str:
     return msg
 
 
-async def send_signal(app: Application, signal: Signal, ai_commentary: str | None) -> None:
+async def send_signal(app: Application, signal: Signal, ai_commentary: str | None) -> bool:
     if not config.TELEGRAM_CHAT_ID:
-        log.warning("TELEGRAM_CHAT_ID not set — cannot send signal for %s", signal.symbol)
-        return
+        log.error(
+            "TELEGRAM_CHAT_ID is not set — signal for %s was computed but "
+            "CANNOT be delivered. Set TELEGRAM_CHAT_ID in Railway Variables.",
+            signal.symbol,
+        )
+        return False
     text = format_signal_message(signal, ai_commentary)
-    await app.bot.send_message(
-        chat_id=config.TELEGRAM_CHAT_ID,
-        text=text,
-        parse_mode=ParseMode.HTML,
-    )
+    try:
+        await app.bot.send_message(
+            chat_id=config.TELEGRAM_CHAT_ID,
+            text=text,
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.error("Failed to deliver signal for %s to chat_id=%s: %s",
+                   signal.symbol, config.TELEGRAM_CHAT_ID, exc)
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -79,15 +86,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 def build_application(job_scan_callback, command_scan_callback) -> Application:
-    """
-    job_scan_callback: async function(context: ContextTypes.DEFAULT_TYPE) -> None
-        used by the recurring background JobQueue.
-    command_scan_callback: async function(update: Update, context) -> None
-        used by the manual /scan command (python-telegram-bot requires the
-        two signatures to be different, since CommandHandler passes `update`
-        as the first argument and JobQueue does not).
-    Both are wired in from main.py.
-    """
+    """ job_scan_callback: async function(context: ContextTypes.DEFAULT_TYPE) -> None used by the recurring background JobQueue. command_scan_callback: async function(update: Update, context) -> None used by the manual /scan command (python-telegram-bot requires the two signatures to be different, since CommandHandler passes `update` as the first argument and JobQueue does not). Both are wired in from main.py. """
     app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
