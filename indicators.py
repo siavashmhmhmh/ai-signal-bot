@@ -1,7 +1,4 @@
-"""
-Self-contained technical indicator library built on pandas/numpy only —
-no ta-lib or external TA package required, so setup stays simple.
-"""
+""" Self-contained technical indicator library built on pandas/numpy only — no ta-lib or external TA package required, so setup stays simple. """
 from __future__ import annotations
 import numpy as np
 import pandas as pd
@@ -44,6 +41,30 @@ def atr(df: pd.DataFrame, length: int = 14) -> pd.Series:
     return tr.ewm(alpha=1 / length, adjust=False).mean()
 
 
+def adx(df: pd.DataFrame, length: int = 14) -> pd.Series:
+    """ Average Directional Index (Wilder's method) — measures trend STRENGTH, not direction. Low ADX = choppy/ranging market where most signal engines (rule-based or "AI") produce false signals. Used as a gate: only accept a signal when the underlying trend is strong enough to trust the direction call. """
+    high, low, close = df["high"], df["low"], df["close"]
+    up_move = high.diff()
+    down_move = -low.diff()
+
+    plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
+    minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
+
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        high - low,
+        (high - prev_close).abs(),
+        (low - prev_close).abs(),
+    ], axis=1).max(axis=1)
+
+    atr_smooth = tr.ewm(alpha=1 / length, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(alpha=1 / length, adjust=False).mean() / atr_smooth.replace(0, np.nan))
+    minus_di = 100 * (minus_dm.ewm(alpha=1 / length, adjust=False).mean() / atr_smooth.replace(0, np.nan))
+
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1 / length, adjust=False).mean().fillna(0)
+
+
 def bollinger_bands(series: pd.Series, length: int = 20, mult: float = 2.0):
     basis = sma(series, length)
     dev = series.rolling(length).std()
@@ -59,10 +80,7 @@ def volume_spike_ratio(volume: pd.Series, length: int = 20) -> pd.Series:
 
 
 def swing_points(df: pd.DataFrame, left: int = 5, right: int = 5):
-    """
-    Simple fractal-based swing high/low detector.
-    Returns two boolean Series: is_swing_high, is_swing_low.
-    """
+    """ Simple fractal-based swing high/low detector. Returns two boolean Series: is_swing_high, is_swing_low. """
     high, low = df["high"], df["low"]
     n = len(df)
     is_high = pd.Series(False, index=df.index)
@@ -78,10 +96,7 @@ def swing_points(df: pd.DataFrame, left: int = 5, right: int = 5):
 
 
 def nearest_support_resistance(df: pd.DataFrame, left: int = 5, right: int = 5, lookback: int = 150):
-    """
-    Returns (nearest_support, nearest_resistance) price levels below/above
-    the last close, based on recent swing points.
-    """
+    """ Returns (nearest_support, nearest_resistance) price levels below/above the last close, based on recent swing points. """
     recent = df.tail(lookback).copy()
     is_high, is_low = swing_points(recent, left, right)
     last_close = recent["close"].iloc[-1]
@@ -108,6 +123,7 @@ def add_core_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out["macd_signal"] = signal_line
     out["macd_hist"] = hist
     out["atr14"] = atr(out, 14)
+    out["adx14"] = adx(out, 14)
     basis, upper, lower, bandwidth = bollinger_bands(out["close"], 20, 2.0)
     out["bb_basis"] = basis
     out["bb_upper"] = upper
