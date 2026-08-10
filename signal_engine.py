@@ -140,6 +140,16 @@ def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Si
     if score < config.MIN_SIGNAL_SCORE:
         return None
 
+    # ADX gate: reject signals in choppy/ranging conditions even if the
+    # weighted score cleared the bar. Uses the 4h ADX as the trend-strength
+    # read since that's slow enough to filter noise but responsive enough
+    # to matter for a 15m-entry setup.
+    adx_val = float(mtf["trend_high"].iloc[-1]["adx14"])
+    if adx_val < config.MIN_ADX:
+        log.info("%-12s SKIP ADX too low: %.1f (need %.0f) — ranging market",
+                  symbol, adx_val, config.MIN_ADX)
+        return None
+
     entry_df = mtf["entry"]
     last = entry_df.iloc[-1]
     entry_price = float(last["close"])
@@ -158,6 +168,16 @@ def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Si
         targets = [entry_price - risk * m for m in config.TP_R_MULTIPLES]
 
     if risk <= 0:
+        return None
+
+    risk_pct = risk / entry_price
+    if risk_pct < config.MIN_RISK_PCT:
+        log.info("%-12s SKIP stop too tight: risk=%.3f%% (min %.2f%%) — likely noise",
+                  symbol, risk_pct * 100, config.MIN_RISK_PCT * 100)
+        return None
+    if risk_pct > config.MAX_RISK_PCT:
+        log.info("%-12s SKIP stop too wide: risk=%.2f%% (max %.1f%%) — bad risk setup",
+                  symbol, risk_pct * 100, config.MAX_RISK_PCT * 100)
         return None
 
     risk_reward = config.TP_R_MULTIPLES  # by construction, RR == the R multiple used
