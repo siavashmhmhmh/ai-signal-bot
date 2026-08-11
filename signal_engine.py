@@ -1,4 +1,23 @@
-""" Signal Engine — implements the "Target Trend [BigBeluga]" indicator logic as the bot's entry/exit engine. How it works (mirrors the Pine Script indicator): * A rolling high/low band is built from SMA(high/low, length) offset by a smoothed ATR (SMA(ATR(200), 200) * 0.8). * When price closes above the upper band -> trend flips to UP (bullish). * When price closes below the lower band -> trend flips to DOWN (bearish). * The opposite band at the moment of the flip becomes the stop loss (the same "trailing stop" line the indicator plots). * Three take-profit targets are placed at 5x / 10x / 15x the smoothed ATR away from entry, in the trade's direction — identical to the indicator's target1/target2/target3 lines. This is an exact, faithful translation of the indicator with no added filters — the bot fires whenever the indicator itself flips trend on the configured entry timeframe (15m by default), exactly like the indicator would flash a signal on a live chart. """
+"""
+Signal Engine — implements the "Target Trend [BigBeluga]" indicator logic
+as the bot's entry/exit engine.
+
+How it works (mirrors the Pine Script indicator):
+  * A rolling high/low band is built from SMA(high/low, length) offset by
+    a smoothed ATR (SMA(ATR(200), 200) * 0.8).
+  * When price closes above the upper band -> trend flips to UP (bullish).
+  * When price closes below the lower band -> trend flips to DOWN (bearish).
+  * The opposite band at the moment of the flip becomes the stop loss
+    (the same "trailing stop" line the indicator plots).
+  * Three take-profit targets are placed at 5x / 10x / 15x the smoothed
+    ATR away from entry, in the trade's direction — identical to the
+    indicator's target1/target2/target3 lines.
+
+This is an exact, faithful translation of the indicator with no added
+filters — the bot fires whenever the indicator itself flips trend on the
+configured entry timeframe (15m by default), exactly like the indicator
+would flash a signal on a live chart.
+"""
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
@@ -42,8 +61,16 @@ def _rma(series: pd.Series, period: int) -> pd.Series:
     return series.ewm(alpha=1.0 / period, adjust=False).mean()
 
 
-def _compute_target_trend(df: pd.DataFrame, length: int = 10, atr_period: int = 200) -> pd.DataFrame:
-    """ Reproduces the indicator's core calculations: sma_high = SMA(high, length) + smoothed_atr sma_low = SMA(low, length) - smoothed_atr trend flips up when close crosses above sma_high, trend flips down when close crosses below sma_low. Adds columns: sma_high, sma_low, atr_value, trend, signal_up, signal_down. """
+def _compute_target_trend(df: pd.DataFrame, length: int = 10,
+                           atr_period: int = 200) -> pd.DataFrame:
+    """
+    Reproduces the indicator's core calculations:
+      sma_high = SMA(high, length) + smoothed_atr
+      sma_low  = SMA(low,  length) - smoothed_atr
+      trend flips up when close crosses above sma_high,
+      trend flips down when close crosses below sma_low.
+    Adds columns: sma_high, sma_low, atr_value, trend, signal_up, signal_down.
+    """
     out = df.copy()
     tr = _true_range(out)
     atr_raw = _rma(tr, atr_period)
@@ -96,7 +123,7 @@ def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Si
     if entry_raw is None:
         log.info("%-12s SKIP missing entry timeframe", symbol)
         return None
-    if len(entry_raw) < 210:
+    if len(entry_raw) < 211:
         log.info("%-12s SKIP not enough candles (%d)", symbol, len(entry_raw))
         return None
 
@@ -104,7 +131,13 @@ def analyze_symbol(symbol: str, mtf_raw: Dict[str, pd.DataFrame]) -> Optional[Si
     target_offset = getattr(config, "TARGET_TREND_OFFSET", 0)
 
     entry_tt = _compute_target_trend(entry_raw, length=length)
-    last = entry_tt.iloc[-1]
+    # Mirror Pine Script's `barstate.isconfirmed`: only act on the last
+    # FULLY CLOSED candle, never the currently-forming one. The most
+    # recent row from the exchange is usually still live/in-progress, so
+    # we deliberately look one bar back — this is what keeps the bot's
+    # signal in sync with what the indicator actually shows on a live
+    # TradingView chart.
+    last = entry_tt.iloc[-2]
 
     if bool(last["signal_up"]):
         direction = "LONG"
